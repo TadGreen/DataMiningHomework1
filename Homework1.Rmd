@@ -1,0 +1,136 @@
+---
+title: "Howework 1"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+```{r}
+# 1a) Read the data file into a variable called su
+su <- read.delim("Su_raw_matrix.txt")
+
+# 1b) Find mean and standard deviation of the Liver_2.CEL column
+mean_liver2 <- mean(su$Liver_2.CEL, na.rm = TRUE)  # mean, ignore NA values
+sd_liver2 <- sd(su$Liver_2.CEL, na.rm = TRUE)      # standard deviation, ignore NAs
+
+# Print results for checking
+print(paste("Mean:", mean_liver2))
+print(paste("Std Dev:", sd_liver2))
+
+# 1c) Find average and total for each column
+col_means <- colMeans(su, na.rm = TRUE)   # average for each column
+col_sums  <- colSums(su, na.rm = TRUE)    # sum for each column
+
+# Optional: Print summaries
+print(col_means)
+print(col_sums)
+```
+
+```{r}
+# 2: Generate histograms for different standard deviations (sigma)
+
+set.seed(123)  # So results are reproducible
+
+# 2a) mean=0, sigma=0.2
+x1 <- rnorm(10000, mean = 0, sd = 0.2)
+hist(x1, main = "Histogram: mean=0, sigma=0.2", xlim = c(-5, 5))
+
+# 2b) mean=0, sigma=0.5
+x2 <- rnorm(10000, mean = 0, sd = 0.5)
+hist(x2, main = "Histogram: mean=0, sigma=0.5", xlim = c(-5, 5))
+
+# Comment: The histogram with sigma=0.5 is much wider (greater spread),
+# because standard deviation determines the spread or variability of the data.
+```
+
+```{r}
+# Import library
+library(ggplot2)
+
+# (a) Create the data frame
+set.seed(42)  # For reproducibility
+dat <- data.frame(
+  cond = factor(rep(c("A", "B"), each = 200)),
+  rating = c(rnorm(200), rnorm(200, mean = 0.8))
+)
+
+# (b) Overlaid histograms (fill colors overlap, alpha controls transparency)
+ggplot(dat, aes(x = rating, fill = cond)) +
+  geom_histogram(binwidth = 0.5, alpha = 0.5, position = "identity") +
+  labs(title = "Overlayed Histograms")
+
+# (c) Interleaved (side-by-side) histograms
+ggplot(dat, aes(x = rating, fill = cond)) +
+  geom_histogram(binwidth = 0.5, position = "dodge") +
+  labs(title = "Interleaved Histograms")
+
+# (d) Density plot (line, colored by group)
+ggplot(dat, aes(x = rating, colour = cond)) +
+  geom_density() +
+  labs(title = "Density Plots by cond")
+
+# (e) Density plot with semi-transparent fill
+ggplot(dat, aes(x = rating, fill = cond)) +
+  geom_density(alpha = 0.3) +
+  labs(title = "Density Plots with Transparent Fill")
+
+diabetes <- read.csv("diabetes_train.csv")
+ggplot(diabetes, aes(x = mass, fill = class)) +
+  geom_histogram(binwidth = 2, alpha = 0.5, position = "identity") +
+  labs(title = "Overlayed Histograms: diabetes")
+
+ggplot(diabetes, aes(x = mass, fill = class)) +
+  geom_histogram(binwidth = 2, position = "dodge") +
+  labs(title = "Interleaved Histograms: diabetes")
+
+ggplot(diabetes, aes(x = mass, colour = class)) +
+  geom_density() +
+  labs(title = "Density Plots by Class: diabetes")
+
+ggplot(diabetes, aes(x = mass, fill = class)) +
+  geom_density(alpha = 0.3) +
+  labs(title = "Density Plots with Transparent Fill: diabetes")
+
+
+
+```
+```{r}
+# Import dplyr
+library(dplyr)
+library(tidyr)
+
+# Read the titanic data into a variable passengers
+passengers <- read.csv("titanic.csv")
+
+# (a) Remove rows with NA values, then give summary statistics
+passengers %>%
+  drop_na() %>%        # Remove rows with NA
+  summary()            # Show summary statistics
+
+# (b) Filter for male passengers
+passengers %>%
+  filter(Sex == "male")
+
+# (c) Arrange by Fare in DESCENDING order
+passengers %>%
+  arrange(desc(Fare))
+
+# (d) Create a new column FamSize as the sum of Parch + SibSp
+passengers %>%
+  mutate(FamSize = Parch + SibSp)
+
+# (e) Group by Sex, calculate mean Fare and total survivors in each group
+passengers %>%
+  group_by(Sex) %>%
+  summarise(meanFare = mean(Fare, na.rm = TRUE),
+            numSurv = sum(Survived, na.rm = TRUE))
+```
+
+
+```{r}
+# Calculate 10th, 30th, 50th, 60th percentiles for skin attribute in diabetes data
+quantile(diabetes$skin, probs = c(0.1, 0.3, 0.5, 0.6), na.rm = TRUE)
+```
+
+
