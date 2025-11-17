@@ -1,0 +1,188 @@
+---
+title: "K-Means and K-Medoids: Runtime Scaling, Cluster Membership, and True Class Shapes"
+author: "Halil Bisgin (updated)"
+output: html_document
+---
+
+## Purpose
+
+This RMarkdown runs K-Means and K-Medoids (PAM) across multiple dataset sizes (n = 300, 500, ..., 1500), records run times, plots runtime curves for both methods, and visualizes final clustering for the largest dataset. Points are drawn with shape corresponding to their true class and color corresponding to the clustering result. Medoids are marked with a black edge.
+
+```{r setup, message=FALSE, warning=FALSE}
+# Uncomment to install if needed:
+# install.packages(c("cluster", "ggplot2", "tictoc", "dplyr", "tidyr", "patchwork"))
+
+library(cluster)   # pam
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(patchwork)  # for side-by-side plots
+set.seed(42)
+```
+
+## Parameters: list of sample sizes to try
+
+```{r params}
+# Vector of data set sizes (you asked for 300 to 1500 in increments of 200)
+ns <- seq(300, 1500, by = 200)  # 300, 500, 700, ..., 1500
+
+# Number of clusters
+k <- 3
+
+# kmeans control
+kmeans_nstart <- 10
+
+# store runtime results
+runtime_results <- data.frame(n = integer(), method = character(), elapsed = numeric(), stringsAsFactors = FALSE)
+```
+
+## Run experiments: simulate data for each n and time K-Means and PAM
+
+```{r run-experiments, message=FALSE}
+for (n in ns) {
+  # create roughly equal cluster sizes
+  n1 <- floor(n/3)
+  n2 <- floor(n/3)
+  n3 <- n - n1 - n2
+
+  # simulate 3 Gaussian clusters (same centers as before)
+  cluster1 <- data.frame(feature1 = rnorm(n1, mean = 2, sd = 0.5),
+                         feature2 = rnorm(n1, mean = 2, sd = 0.5),
+                         TrueClass = factor(rep(1, n1)))
+  cluster2 <- data.frame(feature1 = rnorm(n2, mean = 6, sd = 0.5),
+                         feature2 = rnorm(n2, mean = 6, sd = 0.5),
+                         TrueClass = factor(rep(2, n2)))
+  cluster3 <- data.frame(feature1 = rnorm(n3, mean = 10, sd = 0.5),
+                         feature2 = rnorm(n3, mean = 2, sd = 0.5),
+                         TrueClass = factor(rep(3, n3)))
+
+  df <- bind_rows(cluster1, cluster2, cluster3)
+
+  # scale features for clustering
+  scaled_df <- scale(df[, c("feature1", "feature2")])
+
+  # time K-Means
+  t_km <- system.time({
+    km_res <- kmeans(scaled_df, centers = k, nstart = kmeans_nstart)
+  })
+  runtime_results <- runtime_results %>%
+    add_row(n = n, method = "KMeans", elapsed = as.numeric(t_km["elapsed"]))
+
+  # time K-Medoids / PAM
+  t_kmed <- system.time({
+    # pam can be slow for very large n; for these sizes it's usually fine
+    pam_res <- pam(scaled_df, k = k)
+  })
+  runtime_results <- runtime_results %>%
+    add_row(n = n, method = "KMedoids", elapsed = as.numeric(t_kmed["elapsed"]))
+}
+```
+
+## Runtime curves
+
+```{r runtime-plot, fig.width=7, fig.height=4}
+runtime_results$method <- factor(runtime_results$method, levels = c("KMeans", "KMedoids"))
+
+ggplot(runtime_results, aes(x = n, y = elapsed, color = method)) +
+  geom_point(size = 2) +
+  geom_line() +
+  scale_color_brewer(palette = "Set1") +
+  labs(title = "Runtime vs. number of data points",
+       x = "Number of data points (n)",
+       y = "Elapsed time (seconds)",
+       color = "Method") +
+  theme_minimal()
+```
+
+## Detailed visualization for the largest dataset (n = max(ns))
+
+This section re-simulates the largest dataset and plots the clustering assignments. Point shape corresponds to the true class label and color corresponds to the cluster membership. For the K-Medoids plot, medoids are marked with black edge color.
+
+```{r large-dataset-visuals, fig.width=12, fig.height=5}
+# Simulate one dataset for the largest n (for visualization)
+n_large <- max(ns)
+n1 <- floor(n_large/3)
+n2 <- floor(n_large/3)
+n3 <- n_large - n1 - n2
+
+cluster1 <- data.frame(feature1 = rnorm(n1, mean = 2, sd = 0.5),
+                       feature2 = rnorm(n1, mean = 2, sd = 0.5),
+                       TrueClass = factor(rep(1, n1)))
+cluster2 <- data.frame(feature1 = rnorm(n2, mean = 6, sd = 0.5),
+                       feature2 = rnorm(n2, mean = 6, sd = 0.5),
+                       TrueClass = factor(rep(2, n2)))
+cluster3 <- data.frame(feature1 = rnorm(n3, mean = 10, sd = 0.5),
+                       feature2 = rnorm(n3, mean = 2, sd = 0.5),
+                       TrueClass = factor(rep(3, n3)))
+
+data_large <- bind_rows(cluster1, cluster2, cluster3)
+
+# Scale for clustering and run algorithms
+scaled_large <- scale(data_large[, c("feature1", "feature2")])
+km_large <- kmeans(scaled_large, centers = k, nstart = kmeans_nstart)
+pam_large <- pam(scaled_large, k = k)
+
+# Attach clustering labels
+data_large$KMeans_Cluster <- factor(km_large$cluster)
+data_large$KMedoids_Cluster <- factor(pam_large$clustering)
+
+# Prepare medoids coordinates (convert back to original scale)
+# pam_large$medoids are in scaled space; convert to original scale
+medoids_scaled <- pam_large$medoids
+medoids_orig <- as.data.frame(sweep(medoids_scaled, 2, attr(scaled_large, "scaled:scale"), "*"))
+medoids_orig <- as.data.frame(sweep(medoids_orig, 2, attr(scaled_large, "scaled:center"), "+"))
+colnames(medoids_orig) <- c("feature1", "feature2")
+# get medoid cluster membership (use clustering assignment of each medoid index)
+# pam_large$id.med gives indices of medoids in the original data (if available)
+if (!is.null(pam_large$id.med)) {
+  medoid_indices <- pam_large$id.med
+  medoids_orig$KMedoids_Cluster <- data_large$KMedoids_Cluster[medoid_indices]
+} else {
+  # fallback: assign cluster number in order (rare)
+  medoids_orig$KMedoids_Cluster <- factor(1:k)
+}
+
+# Compute kmeans centers in original scale
+centers_scaled <- km_large$centers
+centers_orig <- as.data.frame(sweep(centers_scaled, 2, attr(scaled_large, "scaled:scale"), "*"))
+centers_orig <- as.data.frame(sweep(centers_orig, 2, attr(scaled_large, "scaled:center"), "+"))
+colnames(centers_orig) <- c("feature1", "feature2")
+centers_orig$KMeans_Cluster <- factor(1:k)
+
+# Plot: K-Means (color = cluster membership, shape = true class)
+p_km <- ggplot(data_large, aes(x = feature1, y = feature2)) +
+  geom_point(aes(color = KMeans_Cluster, shape = TrueClass), size = 2, alpha = 0.9) +
+  scale_color_brewer(palette = "Set1", name = "KMeans\nCluster") +
+  scale_shape_manual(values = c(16, 17, 15), name = "True class") +
+  geom_point(data = centers_orig, aes(x = feature1, y = feature2),
+             color = "black", fill = "yellow", shape = 23, size = 4, stroke = 1) +
+  ggtitle(paste0("K-Means clustering (n = ", n_large, ")")) +
+  theme_minimal()
+
+# Plot: K-Medoids (color = cluster membership, shape = true class); medoids marked with black edge
+p_kmed <- ggplot(data_large, aes(x = feature1, y = feature2)) +
+  # main points: color = cluster membership, shape = true class
+  geom_point(aes(color = KMedoids_Cluster, shape = TrueClass), size = 2, alpha = 0.9) +
+  scale_color_brewer(palette = "Set2", name = "KMedoids\nCluster") +
+  scale_shape_manual(values = c(16, 17, 15), name = "True class") +
+  # medoids: use shape 21 so we can set a black border (color="black") and fill by cluster
+  geom_point(data = medoids_orig,
+             aes(x = feature1, y = feature2, fill = KMedoids_Cluster),
+             shape = 21, color = "black", size = 4, stroke = 1.2) +
+  scale_fill_brewer(palette = "Set2", guide = FALSE) + # fill same palette as color
+  ggtitle(paste0("K-Medoids (PAM) clustering (n = ", n_large, ")  — medoids have black edges")) +
+  theme_minimal()
+
+# Show side-by-side
+p_km + p_kmed
+```
+
+## Notes and suggestions
+
+- You can increase the maximum n if your system allows; PAM scales worse than K-Means so PAM runtimes grow faster.
+- The runtime plot gives an empirical sense of scaling for these algorithms on this simple 2D data.
+- The visualization uses point shape to indicate the true class (shape) and color to indicate cluster membership; medoids are emphasized with black-bordered filled symbols.
+
+```{r sessioninfo}
+sessionInfo()
+```
